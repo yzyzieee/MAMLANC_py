@@ -70,6 +70,17 @@ def multi_ref_multi_chan_fxlms(
         signals ``[Len, ErrNum]`` (rows are time).
     """
 
+    # Ensure 2-D inputs even for single-channel configurations
+    Ref = np.asarray(Ref)
+    if Ref.ndim == 1:
+        Ref = Ref[:, None]
+    E = np.asarray(E)
+    if E.ndim == 1:
+        E = E[:, None]
+    sec_path = np.asarray(sec_path)
+    if sec_path.ndim == 1:
+        sec_path = sec_path[:, None]
+
     Len = E.shape[0]                # number of time samples
     RefNum = Ref.shape[1]           # number of reference signals
     ChnSum = sec_path.shape[1]      # total number of secondary paths
