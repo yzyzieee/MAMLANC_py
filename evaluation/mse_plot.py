@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Dict, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -30,7 +30,7 @@ def compute_mse(x: np.ndarray, win_len: int = 4096, base_db: float = 94.0) -> np
 
 
 def plot_mse(mse_curve: np.ndarray, title: str, save_path: Optional[str] = None) -> None:
-    """Plot MSE curve and optionally save to disk."""
+    """Plot a single MSE curve and optionally save to disk."""
 
     plt.figure()
     plt.plot(mse_curve)
@@ -48,5 +48,39 @@ def plot_mse(mse_curve: np.ndarray, title: str, save_path: Optional[str] = None)
     plt.close()
 
 
-__all__ = ["compute_mse", "plot_mse"]
+def plot_mse_compare(curves: Dict[str, np.ndarray],
+                     title: str,
+                     save_path: Optional[str] = None) -> None:
+    """Plot multiple MSE curves on the same figure.
+
+    Parameters
+    ----------
+    curves:
+        Mapping from label to MSE curve array.
+    title:
+        Figure title.
+    save_path:
+        Optional path for saving the figure.
+    """
+
+    plt.figure()
+    for label, curve in curves.items():
+        plt.plot(curve, label=label)
+
+    plt.xlabel("Samples")
+    plt.ylabel("MSE (dB)")
+    plt.title(title)
+    plt.grid(True)
+    plt.legend()
+
+    if save_path:
+        directory = os.path.dirname(save_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        plt.savefig(save_path)
+
+    plt.close()
+
+
+__all__ = ["compute_mse", "plot_mse", "plot_mse_compare"]
 

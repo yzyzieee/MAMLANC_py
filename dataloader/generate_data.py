@@ -1,10 +1,11 @@
 # 🔶 路径加载、白噪合成、训练样本生成
 
 import os
+from typing import List, Tuple, Optional
+
 import numpy as np
 import scipy.io as sio
 import scipy.signal as signal
-from typing import List, Tuple
 
 def resample_to_target(x: np.ndarray, fs_orig: int, fs_target: int) -> np.ndarray:
     """Resample signal from fs_orig to fs_target using polyphase filter."""
@@ -16,67 +17,64 @@ def generate_anc_training_data(path_dir: str,
                                 N_epcho: int,
                                 Len_N: int,
                                 fs: int = 16000,
-                                broadband_len: int = None
+                                broadband_len: Optional[int] = None,
                                 ) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Generate ANC training data using real measured paths and synthetic broadband noise.
+    """Generate ANC training data following the MATLAB reference logic.
 
-    Returns:
-        Fx_data: [2*Len_N, N_epcho] double-channel reference input
-        Di_data: [Len_N, N_epcho] error mic signal
+    Each training sample is constructed by filtering a broadband excitation
+    through a randomly selected primary path and the secondary path. The
+    routine assumes a **single** reference microphone and returns stacked
+    segments of length ``Len_N``.
+
+    Returns
+    -------
+    Fx_data : np.ndarray
+        ``[Len_N, N_epcho]`` reference signal at the error microphone.
+    Di_data : np.ndarray
+        ``[Len_N, N_epcho]`` disturbance signal at the error microphone.
     """
     if broadband_len is None:
         broadband_len = int(fs * 3)  # default 3 seconds
 
-    # Step 1: Load primary paths
+    # Step 1: Load primary paths (electric→ref and electric→err)
     all_ref_path, all_err_path = [], []
     for fname in train_files:
         dat = sio.loadmat(os.path.join(path_dir, fname))
-        G = dat['G_matrix']  # shape: [?, 4]
+        G = dat["G_matrix"]  # columns: ch1→ch2, ch1→ch3, ch1→ch4, ch1→ch5
 
-        h_refL = resample_to_target(G[:, 0], 48000, fs)  # ch1→ch2
-        h_refR = resample_to_target(G[:, 1], 48000, fs)  # ch1→ch3
-        h_err  = resample_to_target(G[:, 2], 48000, fs)  # ch1→ch4
+        h_ref = resample_to_target(G[:, 0], 48000, fs)  # electric→ref (ch2)
+        h_err = resample_to_target(G[:, 2], 48000, fs)  # electric→err (ch4)
 
-        all_ref_path.append(np.stack([h_refL, h_refR], axis=1))  # shape: [T, 2]
-        all_err_path.append(h_err)  # shape: [T]
+        all_ref_path.append(h_ref)
+        all_err_path.append(h_err)
 
-    # Step 2: Load secondary path
+    # Step 2: Load and resample secondary path (ref→err)
     sec_dat = sio.loadmat(sec_path_file)
     sec_key = list(sec_dat.keys())[-1]
-    S_48k = sec_dat[sec_key][:, 0]  # [T] from ref → err
+    S_48k = sec_dat[sec_key][:, 0]
     S = resample_to_target(S_48k, 48000, fs)
 
-    # Step 3: Generate broadband excitation signal
+    # Step 3: Generate broadband excitation
     white = np.random.randn(broadband_len)
-    broadband_filter = signal.firwin(513, [0.015, 0.25], pass_zero=False)  # 120Hz–2kHz
+    broadband_filter = signal.firwin(513, [0.015, 0.25], pass_zero=False)
     broadband = signal.lfilter(broadband_filter, [1.0], white)
 
-    # Step 4: Generate training samples
-    Fx_data = np.zeros((2 * Len_N, N_epcho))
+    # Step 4: Assemble training samples
+    Fx_data = np.zeros((Len_N, N_epcho))
     Di_data = np.zeros((Len_N, N_epcho))
 
     for jj in range(N_epcho):
         idx = np.random.randint(len(train_files))
-        P_ref = all_ref_path[idx]  # shape: [T, 2]
-        P_err = all_err_path[idx]  # shape: [T]
+        P_ref = all_ref_path[idx]
+        P_err = all_err_path[idx]
 
-        P_ref_L, P_ref_R = P_ref[:, 0], P_ref[:, 1]
-
-        x_ref_L = signal.lfilter(P_ref_L, [1.0], broadband)
-        x_ref_R = signal.lfilter(P_ref_R, [1.0], broadband)
-
-        xprime_L = signal.lfilter(S, [1.0], x_ref_L)
-        xprime_R = signal.lfilter(S, [1.0], x_ref_R)
-
+        x_ref = signal.lfilter(P_ref, [1.0], broadband)
+        xprime = signal.lfilter(S, [1.0], x_ref)
         d = signal.lfilter(P_err, [1.0], broadband)
 
         idx_cut = np.random.randint(Len_N, len(d))
+        Fx_data[:, jj] = xprime[idx_cut - Len_N: idx_cut]
         Di_data[:, jj] = d[idx_cut - Len_N: idx_cut]
-
-        x1 = xprime_L[idx_cut - Len_N: idx_cut]
-        x2 = xprime_R[idx_cut - Len_N: idx_cut]
-        Fx_data[:, jj] = np.concatenate([x1, x2], axis=0)
 
     return Fx_data, Di_data
 
