@@ -13,14 +13,29 @@ def my_reshape(W, K, M):
     return reshaped_W
 
 
-def multi_ref_multi_chan_fxlms(Ref, E, filter_len, sec_path, stepsize):
-    """
-    Multi-reference multi-channel FxLMS algorithm (non-normalized).
-    Ref: [Len × RefNum] reference signal
-    E:   [Len × ErrNum] primary disturbance signal
-    filter_len: length of control filter
-    sec_path: [Ls × ChnSum] secondary path
-    stepsize: adaptation step size
+def multi_ref_multi_chan_fxlms(Ref,
+                               E,
+                               filter_len,
+                               sec_path,
+                               stepsize,
+                               init_W=None):
+    """Multi-reference multi-channel FxLMS algorithm.
+
+    Parameters
+    ----------
+    Ref:
+        ``[Len × RefNum]`` reference signal.
+    E:
+        ``[Len × ErrNum]`` primary disturbance signal.
+    filter_len:
+        Length of the control filter ``Lw``.
+    sec_path:
+        ``[Ls × ChnSum]`` secondary path impulse responses.
+    stepsize:
+        Adaptation step size.
+    init_W:
+        Optional initial weight matrix ``[Lw × WSum]``.  When ``None`` the
+        weights are initialised to zeros.
     """
     Len = E.shape[0]
     RefNum = Ref.shape[1]
@@ -32,7 +47,7 @@ def multi_ref_multi_chan_fxlms(Ref, E, filter_len, sec_path, stepsize):
     Ls = sec_path.shape[0]
     Lw = filter_len
 
-    W = np.zeros((Lw, WSum))
+    W = np.zeros((Lw, WSum)) if init_W is None else init_W.copy()
     y = np.zeros((CtrlNum, Len))
     s = np.zeros((ErrNum, Len))
     e = np.zeros((ErrNum, Len))

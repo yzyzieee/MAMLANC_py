@@ -34,22 +34,31 @@ for task_idx in range(NUM_TASKS):
 np.save(os.path.join(SAVE_DIR, "meta_init.npy"), maml.Phi)
 print("[Meta Train] Saved meta-initialization.")
 
-# ------------------- Meta-Test (Optional) -------------------
-# Adapt to a new task
-Fx_test, Di_test = generate_task_batch(length=LEN_SIGNAL, num_refs=NUM_REFS)
-maml_test = MAMLFilter(filter_len=FILTER_LEN, num_refs=NUM_REFS)
-maml_test.Phi = maml.Phi.copy()
-maml_test.maml_initial(Fx_test, Di_test, mu=INNER_STEP_SIZE, lamda=FORGET_FACTOR, epsilon=EPSILON)
-
-# FxLMS baseline
-Ref_test, E_test, sec_path = generate_task_batch(length=LEN_SIGNAL, 
-                                                 num_refs=NUM_REFS, 
+# ------------------- Meta-Test Comparison -------------------
+Ref_test, E_test, sec_path = generate_task_batch(length=LEN_SIGNAL,
+                                                 num_refs=NUM_REFS,
                                                  with_secondary=True)
-W_fxlms, err_fxlms = multi_ref_multi_chan_fxlms(Ref_test, E_test, FILTER_LEN, sec_path, INNER_STEP_SIZE)
+
+# Baseline FxLMS (zero initialisation)
+W_base, err_base = multi_ref_multi_chan_fxlms(Ref_test, E_test,
+                                              FILTER_LEN, sec_path,
+                                              INNER_STEP_SIZE)
+
+# MAML-initialised FxLMS
+W_init = maml.Phi.reshape(FILTER_LEN, NUM_REFS)
+W_maml, err_maml = multi_ref_multi_chan_fxlms(Ref_test, E_test,
+                                              FILTER_LEN, sec_path,
+                                              INNER_STEP_SIZE,
+                                              init_W=W_init)
 
 # MSE evaluation
-mse_curve = compute_mse(err_fxlms.flatten())
-print("[FxLMS] Final MSE (dB):", mse_curve[-1])
+mse_base = compute_mse(err_base.flatten())
+mse_maml = compute_mse(err_maml.flatten())
+
+print("[FxLMS] Final MSE (dB):", mse_base[-1])
+print("[MAML+FxLMS] Final MSE (dB):", mse_maml[-1])
 
 # Optionally: save results
-save_mat("figures/fxlms_result.mat", {"err": err_fxlms, "W": W_fxlms})
+save_mat("figures/fxlms_result.mat",
+         {"err_base": err_base, "err_maml": err_maml,
+          "W_base": W_base, "W_maml": W_maml})
