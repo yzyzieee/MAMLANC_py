@@ -79,3 +79,41 @@ def generate_anc_training_data(path_dir: str,
         Fx_data[:, jj] = np.concatenate([x1, x2], axis=0)
 
     return Fx_data, Di_data
+
+
+def generate_task_batch(length: int,
+                        num_refs: int,
+                        with_secondary: bool = False,
+                        num_errs: int = 1,
+                        sec_len: int = 128):
+    """Generate a random ANC task for quick experiments.
+
+    This utility is primarily for algorithm validation when no
+    measured path data are provided. It synthesizes random reference
+    and disturbance signals. When ``with_secondary`` is True, a random
+    secondary path matrix is also returned.
+
+    Args:
+        length (int): Number of time-domain samples.
+        num_refs (int): Number of reference channels.
+        with_secondary (bool): Whether to generate a secondary path.
+        num_errs (int): Number of error microphones.
+        sec_len (int): Length of the secondary path impulse response.
+
+    Returns:
+        If ``with_secondary`` is True:
+            Tuple[np.ndarray, np.ndarray, np.ndarray]
+            → (Ref, E, sec_path)
+        Else:
+            Tuple[np.ndarray, np.ndarray]
+            → (Ref, Di)
+    """
+
+    Ref = np.random.randn(length, num_refs)
+    Di = np.random.randn(length, num_errs)
+
+    if with_secondary:
+        sec_path = np.random.randn(sec_len, num_refs * num_errs)
+        return Ref, Di, sec_path
+
+    return Ref, Di
