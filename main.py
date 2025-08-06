@@ -39,13 +39,18 @@ Ref_test, E_test, sec_path = generate_task_batch(length=LEN_SIGNAL,
                                                  num_refs=NUM_REFS,
                                                  with_secondary=True)
 
+# Number of control loudspeakers inferred from secondary path
+CTRL_NUM = sec_path.shape[1] // NUM_ERRS
+
 # Baseline FxLMS (zero initialisation)
 W_base, err_base = multi_ref_multi_chan_fxlms(Ref_test, E_test,
                                               FILTER_LEN, sec_path,
                                               INNER_STEP_SIZE)
 
 # MAML-initialised FxLMS
-W_init = maml.Phi.reshape(FILTER_LEN, NUM_REFS)
+W_single = maml.Phi.reshape(FILTER_LEN, NUM_REFS)
+# replicate initial weights for each control channel
+W_init = np.tile(W_single, (1, CTRL_NUM))
 W_maml, err_maml = multi_ref_multi_chan_fxlms(Ref_test, E_test,
                                               FILTER_LEN, sec_path,
                                               INNER_STEP_SIZE,
