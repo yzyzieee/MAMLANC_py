@@ -10,9 +10,12 @@ be inspected from MATLAB.
 from __future__ import annotations
 
 import os
-from typing import Dict, Any
+from typing import Any, Dict
 
-from scipy.io import savemat
+import numpy as np
+
+from scipy.io import loadmat, savemat
+from scipy.signal import resample_poly
 
 
 def save_mat(filepath: str, data: Dict[str, Any]) -> None:
@@ -40,5 +43,19 @@ def save_mat(filepath: str, data: Dict[str, Any]) -> None:
         os.makedirs(directory, exist_ok=True)
 
     savemat(filepath, data)
+
+
+def load_and_resample_mat(filepath: str, key: str, fs_target: int) -> Any:
+    """Load an array from a ``.mat`` file and resample to ``fs_target``."""
+
+    data = loadmat(filepath)
+    if key not in data:
+        raise KeyError(f"Key '{key}' not found in {filepath}")
+    arr = np.squeeze(data[key])
+    fs_orig = data.get("fs", fs_target)
+    return resample_poly(arr, fs_target, int(fs_orig))
+
+
+__all__ = ["save_mat", "load_and_resample_mat"]
 
 

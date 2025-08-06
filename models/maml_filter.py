@@ -8,7 +8,7 @@ from .control_filter import ControlFilter
 class MAMLFilter(ControlFilter):
     """Meta-learning based control filter for ANC."""
 
-    def adapt(self, Fx, Di, mu, lamda, epsilon):
+    def maml_initial(self, Fx, Di, mu, lamda, epsilon):
         """Perform one MAML initialization update.
 
         Args:
@@ -32,7 +32,7 @@ class MAMLFilter(ControlFilter):
         Fx_concat = Fx_flip.flatten(order="F").reshape(-1, 1)
 
         # One-step fast adaptation
-        e1 = Di_flip[0] - self.apply(Fx_concat)
+        e1 = Di_flip[0] - self.predict(Fx_concat)
         Wo = self.Phi + mu * e1 * Fx_concat
 
         # Accumulate meta-gradient
@@ -51,6 +51,6 @@ class MAMLFilter(ControlFilter):
                 Er = e_j
 
         # Meta update of initialization weights
-        self.Phi += Grad
+        self.update(Grad)
 
         return float(Er)
