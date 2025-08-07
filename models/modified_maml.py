@@ -69,20 +69,23 @@ class ModifiedMAML(nn.Module):
         anti_noise = torch.einsum('...rse->...e', anti_noise_ele)
         return anti_noise
 
-    def forward(self, Fx: torch.Tensor, Dis: torch.Tensor,
-                Fx_extend: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, Fx: torch.Tensor, Dis: torch.Tensor
+                ) -> tuple[torch.Tensor, torch.Tensor]:
         """Run one modified MAML iteration.
+
+        This method now constructs the delay-line representation internally
+        using :func:`build_delay_line`, ensuring the meta-learner always uses
+        the helper utility.
 
         Args:
             Fx (torch.Tensor): Filtered references ``[R, S, E, Len]``.
             Dis (torch.Tensor): Disturbance matrix ``[E, Len]``.
-            Fx_extend (torch.Tensor): Delay-line inputs
-                ``[T, R, S, E, Len]`` where ``T == len_c``.
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]: Anti-noise matrix
-            ``[T, E]`` and the forgetting factor vector ``[T]``.
+            Tuple[torch.Tensor, torch.Tensor]: Anti-noise matrix ``[T, E]`` and
+            the forgetting factor vector ``[T]`` where ``T == len_c``.
         """
+        Fx_extend = build_delay_line(self.len_c, Fx)
         weights_grad = self.first_grad(self.initial_weights, Fx, Dis)
         control_weights = self.initial_weights - 0.5 * self.lr * weights_grad
         anti_noise_matrix = self.adaptive_filtering(control_weights, Fx_extend)
@@ -111,4 +114,8 @@ def loss_function_maml(anti_noise_matrix: torch.Tensor,
 
 if __name__ == "__main__":
     model = ModifiedMAML(num_ref=4, num_sec=4, len_c=512, lr=1e-5, gamma=0.9)
-    print(model)
+    Fx = torch.randn(4, 4, 1, 512)
+    Dis = torch.randn(1, 512)
+    anti_noise, gamma_vec = model(Fx, Dis)
+    print("anti-noise shape:", anti_noise.shape)
+    print("gamma vector shape:", gamma_vec.shape)
