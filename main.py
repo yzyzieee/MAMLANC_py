@@ -4,7 +4,7 @@ import numpy as np
 import os
 from dataloader.generate_data import generate_task_batch
 from models.maml_filter import MAMLFilter
-from algorithms.fxlms import multi_ref_multi_chan_fxlms
+from algorithms.MultChanFxLMS import MultChanFxLMS
 from utils.mat_io import save_mat
 from utils.signal_utils import compute_mse
 
@@ -41,11 +41,20 @@ maml_test = MAMLFilter(filter_len=FILTER_LEN, num_refs=NUM_REFS)
 maml_test.Phi = maml.Phi.copy()
 maml_test.adapt(Fx_test, Di_test, mu=INNER_STEP_SIZE, lamda=FORGET_FACTOR, epsilon=EPSILON)
 
-# FxLMS baseline
-Ref_test, E_test, sec_path = generate_task_batch(length=LEN_SIGNAL, 
-                                                 num_refs=NUM_REFS, 
-                                                 with_secondary=True)
-W_fxlms, err_fxlms = multi_ref_multi_chan_fxlms(Ref_test, E_test, FILTER_LEN, sec_path, INNER_STEP_SIZE)
+# FxLMS baseline using the class-based implementation
+Ref_test, E_test, sec_path = generate_task_batch(
+    length=LEN_SIGNAL, num_refs=NUM_REFS, with_secondary=True
+)
+fxlms = MultChanFxLMS(
+    ref_num=NUM_REFS,
+    err_num=NUM_ERRS,
+    ctrl_num=NUM_REFS,
+    filter_len=FILTER_LEN,
+    sec_path=sec_path,
+    stepsize=INNER_STEP_SIZE,
+)
+_, err_fxlms = fxlms.process_batch(Ref_test, E_test)
+W_fxlms = fxlms.weights
 
 # MSE evaluation
 mse_fxlms = compute_mse(err_fxlms)
