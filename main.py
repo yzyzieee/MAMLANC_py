@@ -1,10 +1,12 @@
 # 主控脚本：协调训练、测试与可视化
 
-import numpy as np
 import os
+import numpy as np
+import torch
+
 from dataloader.generate_data import generate_task_batch
-from models.maml_filter import MAMLFilter
-from algorithms.fxlms import multi_ref_multi_chan_fxlms
+from models.modified_maml import ModifiedMAML, loss_function_maml
+from algorithms.MultChanFxLMS import MultChanFxLMS
 from utils.mat_io import save_mat
 from utils.signal_utils import compute_mse
 
@@ -23,29 +25,63 @@ SAVE_DIR = "checkpoints"
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 # ------------------- Meta-Training -------------------
-maml = MAMLFilter(filter_len=FILTER_LEN, num_refs=NUM_REFS)
+maml = ModifiedMAML(
+    num_ref=NUM_REFS,
+    num_sec=NUM_REFS,
+    len_c=FILTER_LEN,
+    lr=INNER_STEP_SIZE,
+    gamma=FORGET_FACTOR,
+)
+optimizer = torch.optim.SGD(maml.parameters(), lr=META_STEP_SIZE)
 
 for task_idx in range(NUM_TASKS):
-    Fx, Di = generate_task_batch(length=LEN_SIGNAL, num_refs=NUM_REFS)
-    maml.adapt(Fx, Di, mu=INNER_STEP_SIZE, lamda=FORGET_FACTOR, epsilon=EPSILON)
-    print(f"[Meta Train] Task {task_idx + 1}/{NUM_TASKS} finished")
+    Ref, Di = generate_task_batch(length=LEN_SIGNAL, num_refs=NUM_REFS)
+    Fx = torch.from_numpy(Ref[:FILTER_LEN].T).float()
+    Fx = Fx.view(NUM_REFS, 1, NUM_ERRS, FILTER_LEN).repeat(1, NUM_REFS, NUM_ERRS, 1)
+    Dis = torch.from_numpy(Di[:FILTER_LEN].T).float()
 
-# Save meta-trained initialization
-np.save(os.path.join(SAVE_DIR, "meta_init.npy"), maml.Phi)
+    optimizer.zero_grad()
+    anti_noise, gam_vec = maml(Fx, Dis)
+    loss = loss_function_maml(anti_noise, Dis, gam_vec)
+    loss.backward()
+    optimizer.step()
+    print(f"[Meta Train] Task {task_idx + 1}/{NUM_TASKS} loss: {loss.item():.4f}")
+
+torch.save(maml.state_dict(), os.path.join(SAVE_DIR, "meta_init.pt"))
 print("[Meta Train] Saved meta-initialization.")
 
 # ------------------- Meta-Test (Optional) -------------------
-# Adapt to a new task
-Fx_test, Di_test = generate_task_batch(length=LEN_SIGNAL, num_refs=NUM_REFS)
-maml_test = MAMLFilter(filter_len=FILTER_LEN, num_refs=NUM_REFS)
-maml_test.Phi = maml.Phi.copy()
-maml_test.adapt(Fx_test, Di_test, mu=INNER_STEP_SIZE, lamda=FORGET_FACTOR, epsilon=EPSILON)
+Ref_test, Di_test = generate_task_batch(length=LEN_SIGNAL, num_refs=NUM_REFS)
+Fx_test = torch.from_numpy(Ref_test[:FILTER_LEN].T).float()
+Fx_test = Fx_test.view(NUM_REFS, 1, NUM_ERRS, FILTER_LEN).repeat(1, NUM_REFS, NUM_ERRS, 1)
+Dis_test = torch.from_numpy(Di_test[:FILTER_LEN].T).float()
+maml_test = ModifiedMAML(
+    num_ref=NUM_REFS,
+    num_sec=NUM_REFS,
+    len_c=FILTER_LEN,
+    lr=INNER_STEP_SIZE,
+    gamma=FORGET_FACTOR,
+)
+maml_test.load_state_dict(maml.state_dict())
+with torch.no_grad():
+    anti_noise_test, gam_vec_test = maml_test(Fx_test, Dis_test)
+    test_loss = loss_function_maml(anti_noise_test, Dis_test, gam_vec_test)
+print("[Meta Test] Loss:", float(test_loss))
 
-# FxLMS baseline
-Ref_test, E_test, sec_path = generate_task_batch(length=LEN_SIGNAL, 
-                                                 num_refs=NUM_REFS, 
-                                                 with_secondary=True)
-W_fxlms, err_fxlms = multi_ref_multi_chan_fxlms(Ref_test, E_test, FILTER_LEN, sec_path, INNER_STEP_SIZE)
+# FxLMS baseline using the class-based implementation
+Ref_test, E_test, sec_path = generate_task_batch(
+    length=LEN_SIGNAL, num_refs=NUM_REFS, with_secondary=True
+)
+fxlms = MultChanFxLMS(
+    ref_num=NUM_REFS,
+    err_num=NUM_ERRS,
+    ctrl_num=NUM_REFS,
+    filter_len=FILTER_LEN,
+    sec_path=sec_path,
+    stepsize=INNER_STEP_SIZE,
+)
+_, err_fxlms = fxlms.process_batch(Ref_test, E_test)
+W_fxlms = fxlms.weights
 
 # MSE evaluation
 mse_fxlms = compute_mse(err_fxlms)
