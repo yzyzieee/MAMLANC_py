@@ -11,7 +11,8 @@ class MultChanFxLMS:
     """
     
     def __init__(self, ref_num: int, err_num: int, ctrl_num: int, 
-                 filter_len: int, sec_path: np.ndarray, stepsize: float = 0.01):
+                 filter_len: int, sec_path: np.ndarray, stepsize: float = 0.01,
+                 initial_weights: Optional[np.ndarray] = None):
         """
         初始化NFxLMS算法
         
@@ -22,6 +23,8 @@ class MultChanFxLMS:
         filter_len: 滤波器长度
         sec_path: 次级路径脉冲响应 (ls, ctrl_num*err_num)
         stepsize: 步长
+        initial_weights: 初始控制滤波器权重 (filter_len, ctrl_num*ref_num)
+                        如果为None，则从零开始
         """
         self.ref_num = ref_num
         self.err_num = err_num
@@ -38,7 +41,37 @@ class MultChanFxLMS:
         self.weights = np.zeros((filter_len, self.w_sum))
         
         # 初始化缓存
+        self._init_weights(initial_weights)
         self._init_buffers()
+        
+    def _init_weights(self, initial_weights: Optional[np.ndarray] = None):
+        """
+        初始化滤波器权重
+        
+        参数:
+        initial_weights: 初始权重矩阵 (filter_len, ctrl_num*ref_num)
+                        如果为None，则初始化为零
+        """
+        if initial_weights is None:
+            # 默认初始化为零
+            self.weights = np.zeros((self.filter_len, self.w_sum))
+        else:
+            initial_weights = np.array(initial_weights)
+            
+            # 检查初始权重的形状
+            expected_shape = (self.filter_len, self.w_sum)
+            if initial_weights.shape != expected_shape:
+                raise ValueError(f"初始权重形状错误: 期望 {expected_shape}, "
+                                f"实际 {initial_weights.shape}")
+            
+            # 使用给定的初始权重
+            self.weights = initial_weights.copy()
+            
+        print(f"权重初始化完成，形状: {self.weights.shape}")
+        if initial_weights is not None:
+            print(f"使用给定的初始权重，权重范围: [{np.min(self.weights):.4f}, {np.max(self.weights):.4f}]")
+        else:
+            print("权重初始化为零")
         
     def _validate_inputs(self):
         """验证输入参数的有效性"""
@@ -98,7 +131,7 @@ class MultChanFxLMS:
         secondary_signal = self._compute_secondary_signal()
         
         # 计算误差信号
-        error_signal = error_sample + secondary_signal
+        error_signal = error_sample - secondary_signal
         
         # 更新权重
         self._update_weights(error_signal)
@@ -252,7 +285,7 @@ def multi_ref_multi_chan_fxlms(ref: np.ndarray, e: np.ndarray,
     ctrl_num = chn_sum // err_num
     
     # 创建算法实例
-    algorithm = MultRefMultChanNFxLMS(
+    algorithm = MultChanFxLMS(
         ref_num=ref_num,
         err_num=err_num, 
         ctrl_num=ctrl_num,
